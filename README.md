@@ -61,30 +61,7 @@ PORT=5000
 DEBUG=True
 ```
 
-## Running Qdrant
 
-### Option 1: Using Docker (Recommended)
-```bash
-docker run -p 6333:6333 qdrant/qdrant
-```
-
-### Option 2: Using Docker Compose
-Create a `docker-compose.yml`:
-```yaml
-version: '3'
-services:
-  qdrant:
-    image: qdrant/qdrant
-    ports:
-      - "6333:6333"
-    volumes:
-      - ./qdrant_storage:/qdrant/storage
-```
-
-Then run:
-```bash
-docker-compose up -d
-```
 
 ## Running the API
 
@@ -95,7 +72,7 @@ docker-compose up -d
 python app.py
 ```
 
-The API will be available at `http://localhost:5000`
+The API will be available at `http://localhost:5000` or you can use on heroku at `https://ai-qa-d3a2f217dca4.herokuapp.com`
 
 ## API Endpoints
 

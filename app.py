@@ -1,6 +1,7 @@
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, Response, stream_with_context
 from ai_service import AIService
 import os
+from markupsafe import escape
 
 app = Flask(__name__)
 
@@ -43,30 +44,58 @@ def ask_about_iphone17():
     """
     try:
         data = request.get_json()
-        
+
         if not data or 'question' not in data:
             return jsonify({
                 "error": "Missing 'question' field in request body"
             }), 400
-        
+
         question = data['question']
         web_fallback_override = data.get('web_fallback', None)
-        
-        # Get answer from AI service (optionally override web fallback for this request)
-        original_web_fallback = ai_service.enable_web_fallback
-        try:
-            if web_fallback_override is not None:
-                ai_service.enable_web_fallback = bool(web_fallback_override)
-            answer = ai_service.answer_question(question)
-        finally:
-            ai_service.enable_web_fallback = original_web_fallback
-        
-        return jsonify({
-            "question": question,
-            "answer": answer,
-            "status": "success"
-        }), 200
-        
+
+        # Decide if the caller requested a streaming response (default: stream)
+        stream = bool(data.get("stream", True))
+
+        if not stream:
+            # Original JSON (non-streaming) response for backward-compat
+            original_web_fallback = ai_service.enable_web_fallback
+            try:
+                if web_fallback_override is not None:
+                    ai_service.enable_web_fallback = bool(web_fallback_override)
+                answer = ai_service.answer_question(question)
+            finally:
+                ai_service.enable_web_fallback = original_web_fallback
+
+            return jsonify({
+                "question": question,
+                "answer": answer,
+                "status": "success"
+            }), 200
+
+        # Streaming response
+        @stream_with_context
+        def generate():
+            """
+            Stream the answer incrementally. We build the full answer first
+            (service does not natively stream), then yield it in chunks to
+            enable progressive rendering for clients.
+            """
+            original_web_fallback = ai_service.enable_web_fallback
+            try:
+                if web_fallback_override is not None:
+                    ai_service.enable_web_fallback = bool(web_fallback_override)
+                full_answer = ai_service.answer_question(question) or ""
+            finally:
+                ai_service.enable_web_fallback = original_web_fallback
+
+            # Chunk by words for smoother UX; adjust as needed
+            # Using MarkupSafe.escape to avoid accidental HTML/script injection
+            for token in full_answer.split(" "):
+                print(token)
+                yield f"{escape(token)} "
+
+        return Response(generate(), mimetype="text/plain; charset=utf-8")
+
     except Exception as e:
         return jsonify({
             "error": str(e),

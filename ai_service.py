@@ -166,33 +166,7 @@ class AIService:
             return agent
         except Exception as e:
             print(f"Warning: Could not create agent, falling back to basic chain. Error: {e}")
-            # Minimal fallback that avoids PromptTemplate/LLMChain
-            class BasicAgent:
-                def __init__(self, llm, system_text: str):
-                    self.llm = llm
-                    self.system_text = system_text
-                def invoke(self, data: Dict):
-                    # Extract question from supported shapes
-                    question = None
-                    msgs = data.get("messages") if isinstance(data, dict) else None
-                    if isinstance(msgs, list) and msgs:
-                        last = msgs[-1]
-                        if isinstance(last, dict):
-                            question = last.get("content")
-                    if not question and isinstance(data, dict):
-                        question = data.get("input")
-                    if not isinstance(question, str):
-                        question = str(question) if question is not None else ""
-                    prompt = f"{self.system_text}\n\nQuestion: {question}\n\nAnswer:"
-                    try:
-                        result = self.llm.invoke(prompt)
-                        # ChatOpenAI may return a message object with .content
-                        if isinstance(result, str):
-                            return result
-                        content = getattr(result, "content", None)
-                        return content if isinstance(content, str) else str(result)
-                    except Exception as e2:
-                        return f"Agent fallback error: {e2}"
+            from basic_agent import BasicAgent
             return BasicAgent(self.llm, system_prompt)
     
     def retrieve_context(self, query: str) -> str:
@@ -433,23 +407,48 @@ class AIService:
                 except Exception as e:
                     return f"I apologize, but I encountered an error while processing your question: {str(e)}"
             
-            # Normalize output to string
+            # Normalize output to plain text
             if isinstance(agent_result, str):
                 return agent_result
             if isinstance(agent_result, dict):
-                # Try common keys
-                for key in ["output", "final_output", "answer", "result"]:
-                    if key in agent_result and isinstance(agent_result[key], str):
-                        return agent_result[key]
-                # Try messages array (LangGraph agents)
+                # Common keys used by various agent executors
+                for key in ["output_text", "content", "output", "final_output", "answer", "result"]:
+                    value = agent_result.get(key)
+                    if isinstance(value, str) and value.strip():
+                        return value
+
+                # LangChain/LangGraph style: { messages: [HumanMessage, AIMessage, ToolMessage, AIMessage, ...] }
                 msgs = agent_result.get("messages")
                 if isinstance(msgs, list) and msgs:
-                    last = msgs[-1]
-                    content = last.get("content") if isinstance(last, dict) else None
-                    if isinstance(content, str):
-                        return content
-                return str(agent_result)
-            return str(agent_result)
+                    # Walk backwards to find the last non-empty textual content
+                    for item in reversed(msgs):
+                        # Item can be a dict or an object; prefer attribute first
+                        text = None
+                        if hasattr(item, "content"):
+                            text = getattr(item, "content")
+                        elif isinstance(item, dict):
+                            maybe_content = item.get("content")
+                            text = maybe_content
+                        # Some message formats have content as a list of parts
+                        if isinstance(text, list):
+                            # Extract text fields from parts if any
+                            try:
+                                parts_text = "".join(
+                                    part.get("text", "") if isinstance(part, dict) else ""
+                                    for part in text
+                                )
+                                text = parts_text
+                            except Exception:
+                                text = ""
+                        if isinstance(text, str) and text.strip():
+                            return text
+
+                # Fallback: stringify but this includes tool traces; avoid if possible
+                # If no clean text was found, return empty string to avoid noisy outputs
+                return ""
+
+            # Unknown structure; avoid dumping reprs with tool traces
+            return ""
             
         except Exception as e:
             return f"I apologize, but I encountered an error while processing your question: {str(e)}"
