@@ -1,0 +1,26 @@
+# Flask and API dependencies
+Flask
+flask-cors
+
+# Langchain and AI dependencies
+langchain
+langchain-openai
+langchain-community
+openai>=1.107.1,<2
+
+# Vector database
+qdrant-client
+
+# Environment and utilities
+python-dotenv
+requests
+beautifulsoup4
+duckduckgo-search
+pypdf
+
+# Development tools
+pytest
+pytest-flask
+black
+flake8
+ddgs
